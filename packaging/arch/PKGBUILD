@@ -1,0 +1,26 @@
+# Maintainer: Mem Reduct for Linux contributors
+# Arch Linux / Manjaro / EndeavourOS package
+
+pkgname=memreduct
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Lightweight real-time memory management application to monitor and clean system memory"
+arch=('x86_64' 'aarch64' 'armv7h' 'i686')
+url="https://github.com/flessan/memreduct-linux"
+license=('GPL3')
+depends=('glibc')
+optdepends=('libnotify: desktop notifications after automatic cleaning')
+backup=('etc/memreduct.conf')
+source=()
+
+build() {
+	cd "$startdir/../.."
+	make clean
+	make CFLAGS="$CFLAGS -std=c99" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	cd "$startdir/../.."
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

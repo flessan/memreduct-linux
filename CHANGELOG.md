@@ -1,3 +1,36 @@
+v1.1.0-linux (1 September 2026)
+
+\- added 'top' command: processes using the most memory, with --json output
+
+\- added PSI memory pressure display (kernel >= 4.20) to status and monitor
+
+\- added --json output for 'status' (machine readable, for scripts)
+
+\- monitor: usage history sparkline graph and top-5 memory consumers
+
+\- daemon: one-shot high-memory-usage alert at the danger level
+
+\- added bash and fish shell completions (installed by 'make install')
+
+v1.0.0-linux (1 September 2026)
+
+\- initial Linux port: complete rewrite in portable C99 using /proc interfaces
+
+\- status, clean, monitor (interactive) and daemon (auto-clean) modes
+
+\- cleans page cache, dentry/inode slab caches, compacts memory, optional swap reload
+
+\- threshold and timer based automatic cleaning with cooldown, SIGHUP config reload
+
+\- systemd unit, man page, config file, desktop notifications via notify-send
+
+\- packaging for Debian/Ubuntu (.deb), Fedora/RHEL/openSUSE (.rpm) and Arch (PKGBUILD)
+
+\- works on every Linux distribution (glibc and musl); 'make static' produces a portable binary
+
+---
+Windows version changelog below:
+
 v3.5.2 (1 April 2025)
 
 \- added modified file cache clean

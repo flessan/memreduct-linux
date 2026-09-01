@@ -1,0 +1,23 @@
+[Unit]
+Description=Mem Reduct memory cleaning daemon
+Documentation=man:memreduct(1)
+After=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/memreduct daemon --quiet
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Hardening - the daemon only needs /proc/meminfo, /proc/sys/vm and
+# (optionally) swapoff/swapon.
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

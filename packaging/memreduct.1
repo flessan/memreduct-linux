@@ -1,0 +1,137 @@
+.TH MEMREDUCT 1 "2026" "memreduct 1.1.0" "User Commands"
+.SH NAME
+memreduct \- real-time memory monitoring and cleaning for Linux
+.SH SYNOPSIS
+.B memreduct
+.RI [ command ]
+.RI [ options ]
+.SH DESCRIPTION
+.B memreduct
+is a lightweight real-time memory management application to monitor and
+clean system memory. It is the Linux port of Mem Reduct for Windows.
+.PP
+It reads statistics from
+.I /proc/meminfo
+and cleans memory through the kernel interfaces
+.IR /proc/sys/vm/drop_caches ,
+.I /proc/sys/vm/compact_memory
+and, optionally, by reloading swap. Cleaning requires root privileges;
+monitoring does not.
+.SH COMMANDS
+.TP
+.B status
+Show current memory usage (default command).
+.TP
+.B clean
+Clean memory immediately.
+.TP
+.B top
+Show the processes using the most memory (resident set size).
+.TP
+.B monitor
+Interactive full-screen live monitor with usage history graph, PSI memory
+pressure and top memory consumers. Press
+.B c
+to clean memory,
+.B q
+to quit.
+.TP
+.B daemon
+Run the auto-clean daemon in the foreground (used by the systemd unit).
+Cleans memory when usage reaches
+.B clean_threshold
+percent and/or every
+.B clean_interval
+minutes.
+.SH CLEANING AREAS
+.TP
+.B \-\-pagecache
+Drop clean page cache (the equivalent of Windows standby lists).
+.TP
+.B \-\-dentries
+Drop dentry and inode slab caches.
+.TP
+.B \-\-compact
+Compact fragmented physical memory.
+.TP
+.B \-\-swap
+Move swapped pages back into RAM by running
+.B swapoff \-a
+followed by
+.BR "swapon \-a" .
+Skipped when the swapped data would not fit into available memory.
+.TP
+.B \-\-all
+All of the above. The default is
+.BR "\-\-pagecache \-\-dentries \-\-compact" .
+.SH OPTIONS
+.TP
+.BI "\-t, \-\-threshold " pct
+Auto-clean when memory usage reaches
+.I pct
+percent (daemon mode, 0 disables).
+.TP
+.BI "\-n, \-\-interval " min
+Auto-clean every
+.I min
+minutes (daemon mode, 0 disables).
+.TP
+.BI "\-i, \-\-refresh " sec
+Refresh period for monitor mode / poll period for daemon mode.
+.TP
+.BI "\-l, \-\-limit " n
+Number of processes to show for the
+.B top
+command (default 10).
+.TP
+.B \-j, \-\-json
+Machine-readable JSON output for the
+.B status
+and
+.B top
+commands.
+.TP
+.BI "\-c, \-\-config " file
+Use an alternative configuration file.
+.TP
+.B \-q, \-\-quiet
+Disable desktop notifications.
+.TP
+.B \-h, \-\-help
+Show help.
+.TP
+.B \-v, \-\-version
+Show version.
+.SH FILES
+.TP
+.I /etc/memreduct.conf
+System-wide configuration.
+.TP
+.I ~/.config/memreduct/memreduct.conf
+Per-user configuration (overrides the system-wide file).
+.SH SIGNALS
+The daemon reloads its configuration on
+.B SIGHUP
+and exits cleanly on
+.B SIGINT
+or
+.BR SIGTERM .
+.SH EXAMPLES
+.TP
+Show memory usage:
+.B memreduct
+.TP
+Clean everything, including swap:
+.B sudo memreduct clean \-\-all
+.TP
+Watch memory live and clean on demand:
+.B sudo memreduct monitor
+.TP
+Run the daemon, cleaning at 85% or every 30 minutes:
+.B sudo memreduct daemon \-t 85 \-n 30
+.SH SEE ALSO
+.BR free (1),
+.BR sync (2),
+.BR proc (5)
+.SH AUTHOR
+Original Windows version by Henry++ <https://github.com/henrypp/memreduct>.
