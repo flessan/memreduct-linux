@@ -1,11 +1,17 @@
 <h1 align="center">Mem Reduct for Linux</h1>
 
+<div align="center">
+
+![PreviewFish](./src/image.png)
+
+</div>
+
 <p align="center">
 Lightweight real-time memory management application to monitor<br/>
 and clean system memory on your computer.
 </p>
 
--------
+---
 
 ### Install - just copy & paste
 
@@ -20,6 +26,8 @@ It opens a tiny menu - pick what you want with the arrow keys (or press a number
 ```
   Mem Reduct for Linux - installer
   memory: 1.2 GB used of 3.8 GB (31%)
+
+  up/down + Enter, or press a number
 
   > Install                    (recommended)
     Install + enable auto-clean daemon
@@ -49,21 +57,23 @@ Skip the menu with flags: `... | bash -s -- --install` / `--daemon` /
 curl -fsSL https://raw.githubusercontent.com/flessan/memreduct-linux/master/install.sh | bash -s -- --uninstall
 ```
 
--------
+---
 
 Linux port of [Mem Reduct](https://github.com/henrypp/memreduct) by Henry++.
 Where the Windows version uses undocumented Native API calls to clear the
 working sets and standby page lists, this port uses the official Linux kernel
 interfaces to achieve the same result:
 
-| Windows original            | Linux port                                    |
-|-----------------------------|-----------------------------------------------|
-| Standby page lists          | Page cache (`/proc/sys/vm/drop_caches` = 1)   |
-| System working set          | Dentry/inode slab caches (`drop_caches` = 2)  |
-| Combined memory lists       | Memory compaction (`compact_memory`)          |
-| Modified page lists         | `sync()` + swap reload (`swapoff`/`swapon`)   |
+
+| Windows original      | Linux port                                   |
+| --------------------- | -------------------------------------------- |
+| Standby page lists    | Page cache (`/proc/sys/vm/drop_caches` = 1)  |
+| System working set    | Dentry/inode slab caches (`drop_caches` = 2) |
+| Combined memory lists | Memory compaction (`compact_memory`)         |
+| Modified page lists   | `sync()` + swap reload (`swapoff`/`swapon`)  |
 
 ### Features
+
 - **Status** - colored overview of physical memory, reclaimable cache, swap
   and PSI memory pressure, with `--json` output for scripting
 - **Clean** - one-shot memory cleaning with selectable areas
@@ -77,6 +87,7 @@ interfaces to achieve the same result:
 - Zero dependencies: plain C99 + libc + `/proc` - no GUI toolkit, no libraries
 
 ### Supported distributions
+
 All of them. The program only needs a C library and a Linux kernel (≥ 2.6.16
 for `drop_caches`); it builds and runs identically on glibc and musl:
 
@@ -87,12 +98,14 @@ kernel runs on. A `make static` build produces a single portable binary that
 runs on any distro without installing anything.
 
 ### Build & install (manual way)
+
 ```sh
 make                 # build (any C99 compiler: gcc, clang, tcc)
 sudo make install    # install binary, config, man page, systemd unit
 ```
 
 Optional:
+
 ```sh
 make static                        # fully static, distro-independent binary
 ./packaging/debian/build-deb.sh    # build a .deb  (Debian/Ubuntu/Mint/...)
@@ -101,6 +114,7 @@ cd packaging/arch && makepkg -si            # Arch Linux package
 ```
 
 ### Usage
+
 ```sh
 memreduct                      # show memory usage
 memreduct status --json        # ...as JSON, for scripts
@@ -112,11 +126,13 @@ sudo memreduct daemon -t 85    # auto-clean at 85% usage (foreground)
 ```
 
 Run it automatically at boot:
+
 ```sh
 sudo systemctl enable --now memreduct
 ```
 
 ### Configuration
+
 System-wide `/etc/memreduct.conf`, per-user
 `~/.config/memreduct/memreduct.conf`; command-line options override both.
 The daemon reloads its configuration on `systemctl reload memreduct`.
@@ -135,11 +151,13 @@ notifications = yes     # desktop notifications via notify-send
 See `man memreduct` for the full reference.
 
 ### Landing page
+
 A static Vite + React landing page (with live GitHub API stats) lives in
 [`site/`](site/) and can auto-deploy to GitHub Pages - copy `site/deploy/deploy-pages.yml` to `.github/workflows/`
 (enable it once: Settings → Pages → Source: GitHub Actions).
 
 ### Notes
+
 - Cleaning requires root; monitoring does not.
 - Dropping caches is non-destructive - `sync()` is called first and the
   kernel only discards clean, reclaimable pages. Expect a short period of
@@ -148,6 +166,9 @@ A static Vite + React landing page (with live GitHub API stats) lives in
   into available RAM.
 
 ---
+
 - Original Windows version: [github.com/henrypp/memreduct](https://github.com/henrypp/memreduct)
+
 ---
+
 (c) 2011-2026 Henry++ - GPL v3

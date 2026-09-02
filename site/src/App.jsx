@@ -178,7 +178,7 @@ function Hero({ repo, release }) {
     <header className="hero">
       <nav className="glass-nav">
         <div className="logo">
-          <span className="logo-mark"><img src="./src/100.ico" width="20" style={{ alignItems: "center", marginBottom: "-4px" }} /></span> Mem Reduct <span className="for-linux">for Linux</span>
+          <span className="logo-mark"><img src="./100.ico" width="20" style={{ alignItems: "center", marginBottom: "-4px" }} /></span> Mem Reduct <span className="for-linux">for Linux</span>
         </div>
         <div className="nav-links">
           <a href="#features">Features</a>
