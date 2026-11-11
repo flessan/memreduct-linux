@@ -1,4 +1,4 @@
-.TH MEMREDUCT 1 "2026" "memreduct 1.1.0" "User Commands"
+.TH MEMREDUCT 1 "2026" "memreduct 1.2.0" "User Commands"
 .SH NAME
 memreduct \- real-time memory monitoring and cleaning for Linux
 .SH SYNOPSIS
@@ -12,15 +12,20 @@ clean system memory. It is the Linux port of Mem Reduct for Windows.
 .PP
 It reads statistics from
 .I /proc/meminfo
-and cleans memory through the kernel interfaces
+and optional memory pressure metrics from
+.IR /proc/pressure/memory .
+It cleans memory through documented kernel interfaces including
 .IR /proc/sys/vm/drop_caches ,
 .I /proc/sys/vm/compact_memory
-and, optionally, by reloading swap. Cleaning requires root privileges;
+and, optionally, swap reload. Cleaning requires root privileges;
 monitoring does not.
 .SH COMMANDS
 .TP
 .B status
 Show current memory usage (default command).
+.TP
+.B stats
+Show a detailed memory breakdown, PSI pressure and top memory consumers.
 .TP
 .B clean
 Clean memory immediately.
@@ -38,15 +43,12 @@ to quit.
 .TP
 .B daemon
 Run the auto-clean daemon in the foreground (used by the systemd unit).
-Cleans memory when usage reaches
-.B clean_threshold
-percent and/or every
-.B clean_interval
-minutes.
+It can clean when physical memory usage or PSI pressure reaches a configured
+threshold, and/or every configured interval.
 .SH CLEANING AREAS
 .TP
 .B \-\-pagecache
-Drop clean page cache (the equivalent of Windows standby lists).
+Drop clean page cache (a Linux reclaimable-cache operation).
 .TP
 .B \-\-dentries
 Drop dentry and inode slab caches.
@@ -54,22 +56,35 @@ Drop dentry and inode slab caches.
 .B \-\-compact
 Compact fragmented physical memory.
 .TP
+.B \-\-modified-cache
+Run
+.B sync
+to write dirty file-backed pages so they can become reclaimable. This does
+not discard application memory.
+.TP
 .B \-\-swap
 Move swapped pages back into RAM by running
 .B swapoff \-a
 followed by
 .BR "swapon \-a" .
-Skipped when the swapped data would not fit into available memory.
+Skipped when the swapped data would not fit into available RAM.
 .TP
 .B \-\-all
-All of the above. The default is
-.BR "\-\-pagecache \-\-dentries \-\-compact" .
+Enable all supported cleaning areas, including swap reload. Use swap reload
+with care; it is disabled in the default configuration.
 .SH OPTIONS
 .TP
 .BI "\-t, \-\-threshold " pct
-Auto-clean when memory usage reaches
+Auto-clean when physical memory usage reaches
 .I pct
 percent (daemon mode, 0 disables).
+.TP
+.BI "\-p, \-\-pressure " pct
+Auto-clean when PSI memory
+.B some avg10
+reaches
+.I pct
+percent (daemon mode, 0 disables; requires PSI support).
 .TP
 .BI "\-n, \-\-interval " min
 Auto-clean every
@@ -86,7 +101,8 @@ command (default 10).
 .TP
 .B \-j, \-\-json
 Machine-readable JSON output for the
-.B status
+.B status ,
+.B stats
 and
 .B top
 commands.
@@ -118,17 +134,23 @@ or
 .BR SIGTERM .
 .SH EXAMPLES
 .TP
-Show memory usage:
-.B memreduct
+Show detailed memory statistics:
+.B memreduct stats
 .TP
-Clean everything, including swap:
-.B sudo memreduct clean \-\-all
+Clean cache and modified file-backed pages:
+.B sudo memreduct clean --pagecache --modified-cache
+.TP
+Clean everything, including swap reload:
+.B sudo memreduct clean --all
 .TP
 Watch memory live and clean on demand:
 .B sudo memreduct monitor
 .TP
-Run the daemon, cleaning at 85% or every 30 minutes:
-.B sudo memreduct daemon \-t 85 \-n 30
+Run the daemon, cleaning at 85% usage:
+.B sudo memreduct daemon --threshold 85
+.TP
+Run the daemon when PSI some avg10 reaches 10%:
+.B sudo memreduct daemon --pressure 10
 .SH SEE ALSO
 .BR free (1),
 .BR sync (2),
