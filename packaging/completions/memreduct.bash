@@ -8,10 +8,14 @@ _memreduct ()
 
 	commands="status stats clean top monitor daemon"
 	opts="--pagecache --dentries --compact --swap --modified-cache --sync --all
-		--threshold --pressure --interval --refresh --limit --json --config --quiet
+		--threshold --pressure --pressure-type --interval --refresh --limit --json --config --quiet
 		--help --version"
 
 	case "$prev" in
+		--pressure-type)
+			COMPREPLY=( $(compgen -W "some full" -- "$cur") )
+			return
+			;;
 		-c|--config)
 			COMPREPLY=( $(compgen -f -- "$cur") )
 			return
