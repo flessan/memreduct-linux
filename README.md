@@ -110,6 +110,7 @@ runs on any distro without installing anything.
 
 ```sh
 make                 # build (any C99 compiler: gcc, clang, tcc)
+make test            # run non-destructive CLI smoke tests
 sudo make install    # install binary, config, man page, systemd unit
 ```
 
@@ -153,7 +154,7 @@ The daemon reloads its configuration on `systemctl reload memreduct`.
 clean_threshold = 90    # auto-clean at physical memory usage (0 = off)
 clean_pressure = 0      # auto-clean at PSI some avg10 pressure (0 = off)
 clean_interval = 0      # additionally clean every N minutes (0 = off)
-cooldown = 60           # min seconds between threshold-triggered cleans
+cooldown = 60           # min seconds between automatic cleanups
 clean_pagecache = yes   # drop clean page cache
 clean_dentries = yes    # drop dentry/inode slab caches
 clean_compact = yes     # compact physical memory
