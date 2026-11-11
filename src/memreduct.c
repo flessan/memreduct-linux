@@ -1161,6 +1161,32 @@ static bool read_cgroup_value (const char *path, uint64_t *value, bool *unlimite
 	return true;
 }
 
+static bool cgroup_path_is_safe (const char *path)
+{
+	const char *cursor = path;
+
+	if (!path || path[0] != '/' || strstr (path, "//"))
+		return false;
+
+	while (*cursor)
+	{
+		const char *start;
+
+		while (*cursor == '/')
+			cursor += 1;
+
+		start = cursor;
+
+		while (*cursor && *cursor != '/')
+			cursor += 1;
+
+		if ((size_t) (cursor - start) == 2 && start[0] == '.' && start[1] == '.')
+			return false;
+	}
+
+	return true;
+}
+
 static void cgroup_getinfo (CGROUP_INFO *info)
 {
 	FILE *fp;
@@ -1180,17 +1206,25 @@ static void cgroup_getinfo (CGROUP_INFO *info)
 	{
 		if (!strncmp (line, "0::", 3))
 		{
-			snprintf (group, sizeof (group), "%s", line + 3);
-			group[strcspn (group, "\r\n")] = 0;
+			size_t group_length = strcspn (line + 3, "\r\n");
+
+			if (group_length >= sizeof (group))
+			{
+				fclose (fp);
+				return;
+			}
+
+			memcpy (group, line + 3, group_length);
+			group[group_length] = 0;
 			break;
 		}
 	}
 
 	fclose (fp);
 
-	/* Refuse malformed paths rather than composing an unsafe sysfs path. */
-	if (!group[0] || group[0] != '/' || strstr (group, "/../") ||
-		!strcmp (group, "/..") || strstr (group, "//"))
+	/* The cgroup path comes from procfs; validate components before
+	   composing a path below the cgroup v2 mount. */
+	if (!group[0] || !cgroup_path_is_safe (group))
 		return;
 
 	if (snprintf (directory, sizeof (directory), "/sys/fs/cgroup%s", group) >= (int) sizeof (directory))
