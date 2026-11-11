@@ -14,7 +14,7 @@ optdepends=(
   'zram-generator: configure compressed-RAM swap devices'
 )
 backup=('etc/memreduct.conf')
-source=("memreduct::git+https://github.com/flessan/memreduct-linux.git#commit=dcdd2e549cfdb7b2146443efb384793f404cba8a")
+source=("memreduct::git+https://github.com/flessan/memreduct-linux.git#commit=40f995572e31670f56d3caaf70326c42651f93bc")
 sha256sums=('SKIP')
 
 build() {
