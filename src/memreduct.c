@@ -38,7 +38,7 @@
 #include <unistd.h>
 
 #define APP_NAME        "Mem Reduct"
-#define APP_VERSION     "1.2.0"
+#define APP_VERSION     "1.3.0"
 #define APP_BINARY      "memreduct"
 #define APP_COPYRIGHT   "(c) 2011-2026 Henry++, Linux port contributors"
 
