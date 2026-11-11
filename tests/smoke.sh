@@ -15,9 +15,9 @@ printf '%s\n' "$stats" | grep -q 'Memory breakdown'
 printf '%s\n' "$stats" | grep -q 'Dirty / writeback'
 printf '%s\n' "$stats" | grep -q 'Kernel VM counters'
 
-python3 -c '
-import json, subprocess, sys
-binary = sys.argv[1]
+MEMREDUCT_BIN="$BIN" python3 -c '
+import json, os, subprocess
+binary = os.environ["MEMREDUCT_BIN"]
 required = {
     "total_kb", "used_kb", "available_kb", "cache_kb", "percent",
     "active_kb", "inactive_kb", "active_file_kb", "inactive_file_kb",
