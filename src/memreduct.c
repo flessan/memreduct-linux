@@ -415,17 +415,25 @@ static void pressure_readmetric (const char *path, PRESSURE_METRIC *metric)
 	{
 		if (!strncmp (line, "some ", 5))
 		{
+			unsigned long long total = 0;
+
 			if (sscanf (line, "some avg10=%lf avg60=%lf avg300=%lf total=%llu",
-				&metric->some_avg10, &metric->some_avg60, &metric->some_avg300,
-				(unsigned long long *) &metric->some_total_us) == 4)
+				&metric->some_avg10, &metric->some_avg60, &metric->some_avg300, &total) == 4)
+			{
+				metric->some_total_us = (uint64_t) total;
 				metric->some_available = true;
+			}
 		}
 		else if (!strncmp (line, "full ", 5))
 		{
+			unsigned long long total = 0;
+
 			if (sscanf (line, "full avg10=%lf avg60=%lf avg300=%lf total=%llu",
-				&metric->full_avg10, &metric->full_avg60, &metric->full_avg300,
-				(unsigned long long *) &metric->full_total_us) == 4)
+				&metric->full_avg10, &metric->full_avg60, &metric->full_avg300, &total) == 4)
+			{
+				metric->full_total_us = (uint64_t) total;
 				metric->full_available = true;
+			}
 		}
 	}
 
@@ -1271,10 +1279,83 @@ static void print_memory_details (const MEMORY_INFO *info, const ZRAM_INFO *zram
 			(unsigned long long) info->hugepages_total,
 			(unsigned long long) info->hugepages_free,
 			(unsigned long long) info->hugepages_size);
+
+	if (zram->available)
+	{
+		double ratio = zram->compressed_bytes ?
+			(double) zram->original_bytes / (double) zram->compressed_bytes : 0.0;
+
+		format_size (zram->original_bytes / 1024, value, sizeof (value));
+		format_size (zram->compressed_bytes / 1024, other, sizeof (other));
+		printf ("  ZRAM devices          %u device(s), %s logical / %s compressed (%.2fx)\n",
+			zram->devices, value, other, ratio);
+
+		format_size (zram->memory_used_bytes / 1024, value, sizeof (value));
+		printf ("  ZRAM allocated        %s", value);
+
+		if (zram->memory_limit_bytes)
+		{
+			format_size (zram->memory_limit_bytes / 1024, other, sizeof (other));
+			printf (" / %s limit", other);
+		}
+
+		printf ("\n");
+	}
+
+	if (vmstat->available)
+	{
+		printf ("\nKernel VM counters (since boot)\n");
+		printf ("  Page faults           %llu total, %llu major\n",
+			(unsigned long long) vmstat->page_faults,
+			(unsigned long long) vmstat->major_faults);
+		printf ("  Swap I/O              %llu pages in, %llu pages out\n",
+			(unsigned long long) vmstat->pswpin,
+			(unsigned long long) vmstat->pswpout);
+		printf ("  Reclaim (kswapd)      %llu scanned, %llu reclaimed\n",
+			(unsigned long long) vmstat->pgscan_kswapd,
+			(unsigned long long) vmstat->pgsteal_kswapd);
+		printf ("  Reclaim (direct)      %llu scanned, %llu reclaimed\n",
+			(unsigned long long) vmstat->pgscan_direct,
+			(unsigned long long) vmstat->pgsteal_direct);
+		printf ("  Compaction            %llu stalls, %llu successes, %llu failures\n",
+			(unsigned long long) vmstat->compact_stall,
+			(unsigned long long) vmstat->compact_success,
+			(unsigned long long) vmstat->compact_fail);
+		printf ("  OOM kills             %llu\n",
+			(unsigned long long) vmstat->oom_kill);
+	}
+
+	if (cgroup->available)
+	{
+		format_size (cgroup->current_bytes / 1024, value, sizeof (value));
+		printf ("  Current cgroup        %s", value);
+
+		if (cgroup->limit_unlimited)
+			printf (" / unlimited");
+		else
+		{
+			format_size (cgroup->limit_bytes / 1024, other, sizeof (other));
+			printf (" / %s limit", other);
+		}
+
+		printf ("\n");
+		format_size (cgroup->swap_current_bytes / 1024, value, sizeof (value));
+		printf ("  Cgroup swap           %s\n", value);
+		printf ("  Cgroup memory events  high %llu, max %llu, OOM %llu, OOM kills %llu\n",
+			(unsigned long long) cgroup->high_events,
+			(unsigned long long) cgroup->max_events,
+			(unsigned long long) cgroup->oom_events,
+			(unsigned long long) cgroup->oom_kill_events);
+	}
 }
 
-static void print_json_meminfo (const MEMORY_INFO *info, const PRESSURE_INFO *pressure)
+static void print_json_meminfo (const MEMORY_INFO *info, const PRESSURE_INFO *pressure,
+	const ZRAM_INFO *zram, const VMSTAT_INFO *vmstat, const CGROUP_INFO *cgroup)
 {
+	const PRESSURE_METRIC *memory = &pressure->memory;
+	const PRESSURE_METRIC *cpu = &pressure->cpu;
+	const PRESSURE_METRIC *io = &pressure->io;
+
 	printf ("{\n"
 		"  \"total_kb\": %llu,\n"
 		"  \"used_kb\": %llu,\n"
@@ -1303,7 +1384,58 @@ static void print_json_meminfo (const MEMORY_INFO *info, const PRESSURE_INFO *pr
 		"  \"committed_as_kb\": %llu,\n"
 		"  \"hugepages_total\": %llu,\n"
 		"  \"hugepages_free\": %llu,\n"
-		"  \"hugepages_size_kb\": %llu",
+		"  \"hugepages_size_kb\": %llu,\n"
+		"  \"psi_memory_available\": %s,\n"
+		"  \"psi_memory_some_avg10\": %.2f,\n"
+		"  \"psi_memory_some_avg60\": %.2f,\n"
+		"  \"psi_memory_some_avg300\": %.2f,\n"
+		"  \"psi_memory_some_total_us\": %llu,\n"
+		"  \"psi_memory_full_available\": %s,\n"
+		"  \"psi_memory_full_avg10\": %.2f,\n"
+		"  \"psi_memory_full_avg60\": %.2f,\n"
+		"  \"psi_memory_full_avg300\": %.2f,\n"
+		"  \"psi_memory_full_total_us\": %llu,\n"
+		"  \"psi_cpu_available\": %s,\n"
+		"  \"psi_cpu_some_avg10\": %.2f,\n"
+		"  \"psi_cpu_some_avg60\": %.2f,\n"
+		"  \"psi_cpu_some_avg300\": %.2f,\n"
+		"  \"psi_io_available\": %s,\n"
+		"  \"psi_io_some_avg10\": %.2f,\n"
+		"  \"psi_io_some_avg60\": %.2f,\n"
+		"  \"psi_io_some_avg300\": %.2f,\n"
+		"  \"zram_available\": %s,\n"
+		"  \"zram_devices\": %u,\n"
+		"  \"zram_original_bytes\": %llu,\n"
+		"  \"zram_compressed_bytes\": %llu,\n"
+		"  \"zram_memory_used_bytes\": %llu,\n"
+		"  \"zram_memory_limit_bytes\": %llu,\n"
+		"  \"zram_same_pages\": %llu,\n"
+		"  \"zram_pages_compacted\": %llu,\n"
+		"  \"zram_huge_pages\": %llu,\n"
+		"  \"vmstat_available\": %s,\n"
+		"  \"page_faults\": %llu,\n"
+		"  \"major_page_faults\": %llu,\n"
+		"  \"pswpin_pages\": %llu,\n"
+		"  \"pswpout_pages\": %llu,\n"
+		"  \"pgscan_kswapd\": %llu,\n"
+		"  \"pgsteal_kswapd\": %llu,\n"
+		"  \"pgscan_direct\": %llu,\n"
+		"  \"pgsteal_direct\": %llu,\n"
+		"  \"compact_stall\": %llu,\n"
+		"  \"compact_success\": %llu,\n"
+		"  \"compact_fail\": %llu,\n"
+		"  \"oom_kill\": %llu,\n"
+		"  \"cgroup_v2_available\": %s,\n"
+		"  \"cgroup_memory_current_bytes\": %llu,\n"
+		"  \"cgroup_memory_limit_bytes\": %llu,\n"
+		"  \"cgroup_memory_limit_unlimited\": %s,\n"
+		"  \"cgroup_memory_high_bytes\": %llu,\n"
+		"  \"cgroup_memory_swap_current_bytes\": %llu,\n"
+		"  \"cgroup_event_high\": %llu,\n"
+		"  \"cgroup_event_max\": %llu,\n"
+		"  \"cgroup_event_oom\": %llu,\n"
+		"  \"cgroup_event_oom_kill\": %llu\n"
+		"}\n",
 		(unsigned long long) info->total,
 		(unsigned long long) info->used,
 		(unsigned long long) info->available,
@@ -1331,15 +1463,49 @@ static void print_json_meminfo (const MEMORY_INFO *info, const PRESSURE_INFO *pr
 		(unsigned long long) info->committed_as,
 		(unsigned long long) info->hugepages_total,
 		(unsigned long long) info->hugepages_free,
-		(unsigned long long) info->hugepages_size);
-
-	if (pressure->available)
-	{
-		printf (",\n  \"pressure_some_avg10\": %.2f,\n  \"pressure_full_avg10\": %.2f",
-			pressure->some_avg10, pressure->full_avg10);
-	}
-
-	printf ("\n}\n");
+		(unsigned long long) info->hugepages_size,
+		memory->some_available ? "true" : "false",
+		memory->some_avg10, memory->some_avg60, memory->some_avg300,
+		(unsigned long long) memory->some_total_us,
+		memory->full_available ? "true" : "false",
+		memory->full_avg10, memory->full_avg60, memory->full_avg300,
+		(unsigned long long) memory->full_total_us,
+		cpu->some_available ? "true" : "false",
+		cpu->some_avg10, cpu->some_avg60, cpu->some_avg300,
+		io->some_available ? "true" : "false",
+		io->some_avg10, io->some_avg60, io->some_avg300,
+		zram->available ? "true" : "false",
+		zram->devices,
+		(unsigned long long) zram->original_bytes,
+		(unsigned long long) zram->compressed_bytes,
+		(unsigned long long) zram->memory_used_bytes,
+		(unsigned long long) zram->memory_limit_bytes,
+		(unsigned long long) zram->same_pages,
+		(unsigned long long) zram->pages_compacted,
+		(unsigned long long) zram->huge_pages,
+		vmstat->available ? "true" : "false",
+		(unsigned long long) vmstat->page_faults,
+		(unsigned long long) vmstat->major_faults,
+		(unsigned long long) vmstat->pswpin,
+		(unsigned long long) vmstat->pswpout,
+		(unsigned long long) vmstat->pgscan_kswapd,
+		(unsigned long long) vmstat->pgsteal_kswapd,
+		(unsigned long long) vmstat->pgscan_direct,
+		(unsigned long long) vmstat->pgsteal_direct,
+		(unsigned long long) vmstat->compact_stall,
+		(unsigned long long) vmstat->compact_success,
+		(unsigned long long) vmstat->compact_fail,
+		(unsigned long long) vmstat->oom_kill,
+		cgroup->available ? "true" : "false",
+		(unsigned long long) cgroup->current_bytes,
+		(unsigned long long) cgroup->limit_bytes,
+		cgroup->limit_unlimited ? "true" : "false",
+		(unsigned long long) cgroup->high_bytes,
+		(unsigned long long) cgroup->swap_current_bytes,
+		(unsigned long long) cgroup->high_events,
+		(unsigned long long) cgroup->max_events,
+		(unsigned long long) cgroup->oom_events,
+		(unsigned long long) cgroup->oom_kill_events);
 }
 
 
@@ -1410,6 +1576,9 @@ static int command_status (bool as_json)
 {
 	MEMORY_INFO info;
 	PRESSURE_INFO pressure;
+	ZRAM_INFO zram;
+	VMSTAT_INFO vmstat;
+	CGROUP_INFO cgroup;
 	bool use_color = isatty (STDOUT_FILENO);
 
 	if (!memory_getinfo (&info))
@@ -1419,10 +1588,13 @@ static int command_status (bool as_json)
 	}
 
 	pressure_getinfo (&pressure);
+	zram_getinfo (&zram);
+	vmstat_getinfo (&vmstat);
+	cgroup_getinfo (&cgroup);
 
 	if (as_json)
 	{
-		print_json_meminfo (&info, &pressure);
+		print_json_meminfo (&info, &pressure, &zram, &vmstat, &cgroup);
 		return 0;
 	}
 
@@ -1438,6 +1610,9 @@ static int command_stats (bool as_json)
 {
 	MEMORY_INFO info;
 	PRESSURE_INFO pressure;
+	ZRAM_INFO zram;
+	VMSTAT_INFO vmstat;
+	CGROUP_INFO cgroup;
 	PROCESS_INFO top_list[5];
 	int count;
 
@@ -1447,14 +1622,17 @@ static int command_stats (bool as_json)
 		return 1;
 	}
 	pressure_getinfo (&pressure);
+	zram_getinfo (&zram);
+	vmstat_getinfo (&vmstat);
+	cgroup_getinfo (&cgroup);
 	if (as_json)
 	{
-		print_json_meminfo (&info, &pressure);
+		print_json_meminfo (&info, &pressure, &zram, &vmstat, &cgroup);
 		return 0;
 	}
 	printf ("%s %s - detailed memory statistics\n\n", APP_NAME, APP_VERSION);
 	print_meminfo (&info, isatty (STDOUT_FILENO));
-	print_memory_details (&info);
+	print_memory_details (&info, &zram, &vmstat, &cgroup);
 	print_pressure (&pressure, isatty (STDOUT_FILENO));
 	count = process_gettop (top_list, 5);
 	if (count)
@@ -1618,9 +1796,9 @@ static int command_daemon (void)
 	if (config.use_syslog)
 		openlog (APP_BINARY, LOG_PID, LOG_DAEMON);
 
-	daemon_log (LOG_INFO, "%s %s daemon started (threshold: %d%%, PSI pressure: %d%%, interval: %d min, areas: %s)",
+	daemon_log (LOG_INFO, "%s %s daemon started (threshold: %d%%, PSI %s pressure: %d%%, interval: %d min, areas: %s)",
 		APP_NAME, APP_VERSION,
-		config.clean_threshold, config.clean_pressure, config.clean_interval,
+		config.clean_threshold, config.clean_pressure_full ? "full" : "some", config.clean_pressure, config.clean_interval,
 		describe_flags (config.clean_flags, description, sizeof (description)));
 
 	while (!is_terminating)
@@ -1632,8 +1810,8 @@ static int command_daemon (void)
 			config_load (NULL);
 			config_sanitize ();
 
-			daemon_log (LOG_INFO, "configuration reloaded (threshold: %d%%, PSI pressure: %d%%, interval: %d min)",
-				config.clean_threshold, config.clean_pressure, config.clean_interval);
+			daemon_log (LOG_INFO, "configuration reloaded (threshold: %d%%, PSI %s pressure: %d%%, interval: %d min)",
+				config.clean_threshold, config.clean_pressure_full ? "full" : "some", config.clean_pressure, config.clean_interval);
 		}
 
 		if (!memory_getinfo (&info))
@@ -1666,8 +1844,12 @@ static int command_daemon (void)
 			warned_high = false;
 		}
 
-		if (config.clean_pressure && pressure.available && pressure.some_avg10 >= (double) config.clean_pressure)
-			reason = "pressure";
+		if (config.clean_pressure &&
+			((config.clean_pressure_full && pressure.memory.full_available &&
+				pressure.memory.full_avg10 >= (double) config.clean_pressure) ||
+			(!config.clean_pressure_full && pressure.memory.some_available &&
+				pressure.memory.some_avg10 >= (double) config.clean_pressure)))
+			reason = config.clean_pressure_full ? "pressure-full" : "pressure-some";
 		else if (config.clean_threshold && info.percent >= (double) config.clean_threshold)
 			reason = "threshold";
 		else if (config.clean_interval && last_clean && (now - last_clean) >= (time_t) config.clean_interval * 60)
@@ -1938,7 +2120,8 @@ static void print_usage (void)
 		"\n"
 		"Options:\n"
 		"  -t, --threshold <pct>  auto-clean when memory usage >= pct (daemon)\n"
-		"  -p, --pressure <pct>   auto-clean when PSI memory pressure >= pct (daemon)\n"
+		"  -p, --pressure <pct>   auto-clean at the selected PSI memory pressure (daemon)\n"
+		"      --pressure-type <mode>  PSI metric: some (default) or full\n"
 		"  -n, --interval <min>   auto-clean every N minutes (daemon)\n"
 		"  -i, --refresh <sec>    refresh/poll period (monitor/daemon)\n"
 		"  -l, --limit <n>        number of processes to show (top, default 10)\n"
@@ -1959,6 +2142,7 @@ int main (int argc, char *argv[])
 	unsigned flags_arg = 0;
 	int threshold_arg = -1;
 	int pressure_arg = -1;
+	const char *pressure_type_arg = NULL;
 	int interval_arg = -1;
 	int refresh_arg = -1;
 	int limit_arg = 10;
@@ -2017,6 +2201,16 @@ int main (int argc, char *argv[])
 		{
 			pressure_arg = atoi (argv[++i]);
 		}
+		else if (!strcmp (arg, "--pressure-type") && i + 1 < argc)
+		{
+			pressure_type_arg = argv[++i];
+
+			if (strcmp (pressure_type_arg, "some") && strcmp (pressure_type_arg, "full"))
+			{
+				fprintf (stderr, "error: --pressure-type must be 'some' or 'full'\n");
+				return 1;
+			}
+		}
 		else if ((!strcmp (arg, "-n") || !strcmp (arg, "--interval")) && i + 1 < argc)
 		{
 			interval_arg = atoi (argv[++i]);
@@ -2059,6 +2253,9 @@ int main (int argc, char *argv[])
 
 	if (pressure_arg >= 0)
 		config.clean_pressure = pressure_arg;
+
+	if (pressure_type_arg)
+		config.clean_pressure_full = !strcmp (pressure_type_arg, "full");
 
 	if (interval_arg >= 0)
 		config.clean_interval = interval_arg;
