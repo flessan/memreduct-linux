@@ -1,3 +1,17 @@
+v1.3.0-linux (11 November 2026)
+
+\- added full and some memory PSI automation, plus CPU and I/O PSI telemetry
+
+\- added ZRAM compression and allocation metrics from sysfs
+
+\- added VM fault, swap, reclaim, compaction and OOM counters
+
+\- added cgroup v2 current usage, limits, swap and memory event statistics
+
+\- added Arch Linux AUR-ready PKGBUILD/.SRCINFO and makepkg CI validation
+
+\- expanded JSON output, shell completions, manual and non-destructive smoke tests
+
 v1.1.0-linux (1 September 2026)
 
 \- added 'top' command: processes using the most memory, with --json output

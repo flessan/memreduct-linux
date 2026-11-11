@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke test (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install compiler
+        if: matrix.compiler == 'clang'
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build
+        run: make clean all
+        env:
+          CC: ${{ matrix.compiler }}
+
+      - name: Smoke tests
+        run: make test
+
+  arch-package:
+    name: Build Arch Linux package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install Arch build prerequisites
+        run: pacman -Syu --noconfirm --needed git python shadow
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Prepare unprivileged package builder
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Verify metadata and build package
+        run: |
+          runuser -u builder -- bash -c "cd '$GITHUB_WORKSPACE' && HOME=/home/builder makepkg --printsrcinfo > .SRCINFO.ci && diff -u .SRCINFO .SRCINFO.ci && HOME=/home/builder makepkg --syncdeps --noconfirm --cleanbuild"

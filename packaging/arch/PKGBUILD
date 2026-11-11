@@ -1,26 +1,37 @@
 # Maintainer: Mem Reduct for Linux contributors
-# Arch Linux / Manjaro / EndeavourOS package
-
 pkgname=memreduct
-pkgver=1.1.0
+pkgver=1.3.0
 pkgrel=1
-pkgdesc="Lightweight real-time memory management application to monitor and clean system memory"
+pkgdesc="Linux memory monitor with cache cleaning, PSI, ZRAM and cgroup metrics"
 arch=('x86_64' 'aarch64' 'armv7h' 'i686')
 url="https://github.com/flessan/memreduct-linux"
-license=('GPL3')
+license=('GPL-3.0-or-later')
 depends=('glibc')
-optdepends=('libnotify: desktop notifications after automatic cleaning')
+makedepends=('git')
+checkdepends=('python')
+optdepends=(
+  'libnotify: send automatic desktop notifications'
+  'zram-generator: configure compressed-RAM swap devices'
+)
 backup=('etc/memreduct.conf')
-source=()
+source=("memreduct::git+https://github.com/flessan/memreduct-linux.git#commit=d69aa572567e2a3ffbe766cbedb5e2d6027d3ac5")
+sha256sums=('SKIP')
 
 build() {
-	cd "$startdir/../.."
-	make clean
-	make CFLAGS="$CFLAGS -std=c99" LDFLAGS="$LDFLAGS"
+  cd "$srcdir/memreduct"
+  make clean
+  make CC="${CC:-cc}" \
+    CFLAGS="$CFLAGS -std=c99 -Wall -Wextra -Wpedantic" \
+    LDFLAGS="$LDFLAGS"
+}
+
+check() {
+  cd "$srcdir/memreduct"
+  make test
 }
 
 package() {
-	cd "$startdir/../.."
-	make DESTDIR="$pkgdir" PREFIX=/usr install
-	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  cd "$srcdir/memreduct"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

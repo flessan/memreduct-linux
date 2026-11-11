@@ -1,0 +1,20 @@
+pkgbase = memreduct
+	pkgdesc = Linux memory monitor with cache cleaning, PSI, ZRAM and cgroup metrics
+	pkgver = 1.3.0
+	pkgrel = 1
+	url = https://github.com/flessan/memreduct-linux
+	arch = x86_64
+	arch = aarch64
+	arch = armv7h
+	arch = i686
+	license = GPL-3.0-or-later
+	checkdepends = python
+	makedepends = git
+	depends = glibc
+	optdepends = libnotify: send automatic desktop notifications
+	optdepends = zram-generator: configure compressed-RAM swap devices
+	backup = etc/memreduct.conf
+	source = memreduct::git+https://github.com/flessan/memreduct-linux.git#commit=d69aa572567e2a3ffbe766cbedb5e2d6027d3ac5
+	sha256sums = SKIP
+
+pkgname = memreduct
