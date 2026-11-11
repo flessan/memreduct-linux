@@ -18,6 +18,7 @@ complete -c memreduct -l all -d 'Clean all memory areas'
 
 complete -c memreduct -s t -l threshold -x -d 'Auto-clean at N% physical memory usage'
 complete -c memreduct -s p -l pressure -x -d 'Auto-clean at N% PSI memory pressure'
+complete -c memreduct -l pressure-type -x -a 'some full' -d 'Select PSI pressure metric'
 complete -c memreduct -s n -l interval -x -d 'Auto-clean every N minutes'
 complete -c memreduct -s i -l refresh -x -d 'Refresh/poll period in seconds'
 complete -c memreduct -s l -l limit -x -d 'Number of processes to show'
