@@ -1,11 +1,11 @@
 # RPM spec for Fedora / RHEL / CentOS / AlmaLinux / Rocky / openSUSE
 #
-# Build from a source tarball named memreduct-1.2.0.tar.gz containing
-# the repository at top level directory memreduct-1.0.0/:
+# Build from a source tarball named memreduct-1.3.0.tar.gz containing
+# the repository at top level directory memreduct-1.3.0/:
 #   rpmbuild -ba packaging/rpm/memreduct.spec
 
 Name:           memreduct
-Version:        1.2.0
+Version:        1.3.0
 Release:        1%{?dist}
 Summary:        Lightweight real-time memory monitoring and cleaning
 License:        GPL-3.0-or-later
@@ -51,6 +51,7 @@ make DESTDIR=%{buildroot} PREFIX=/usr install
 /usr/share/doc/memreduct/README.md
 
 %changelog
-* Wed Nov 11 2026 Mem Reduct for Linux contributors - 1.2.0-1
-- Add detailed memory statistics and PSI-triggered automatic cleanup
-- Improve cache-sync handling, JSON output and CLI test coverage
+* Wed Nov 11 2026 Mem Reduct for Linux contributors - 1.3.0-1
+- Add PSI full/some and CPU/I/O pressure telemetry
+- Report ZRAM, VM reclaim/OOM and cgroup v2 statistics
+- Add Arch package recipe and expanded CLI smoke tests
