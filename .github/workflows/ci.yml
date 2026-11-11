@@ -31,3 +31,23 @@ jobs:
 
       - name: Smoke tests
         run: make test
+
+  arch-package:
+    name: Build Arch Linux package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install Arch build prerequisites
+        run: pacman -Syu --noconfirm --needed git python shadow
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Prepare unprivileged package builder
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Verify metadata and build package
+        run: |
+          runuser -u builder -- bash -c "cd '$GITHUB_WORKSPACE' && HOME=/home/builder makepkg --printsrcinfo > .SRCINFO.ci && diff -u .SRCINFO .SRCINFO.ci && HOME=/home/builder makepkg --syncdeps --noconfirm --cleanbuild"
