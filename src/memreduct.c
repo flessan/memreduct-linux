@@ -46,6 +46,9 @@
 #define PROC_DROP_CACHES   "/proc/sys/vm/drop_caches"
 #define PROC_COMPACT       "/proc/sys/vm/compact_memory"
 #define PROC_PRESSURE      "/proc/pressure/memory"
+#define PROC_PRESSURE_CPU   "/proc/pressure/cpu"
+#define PROC_PRESSURE_IO    "/proc/pressure/io"
+#define PROC_VMSTAT         "/proc/vmstat"
 #define SYSTEM_CONFIG      "/etc/memreduct.conf"
 
 /* cleaning flags (roughly equivalent to the Windows "memory areas") */
@@ -112,6 +115,7 @@ typedef struct
 	int      warning_level;     /* monitor: yellow at N%                    */
 	int      danger_level;      /* monitor: red at N%                       */
 	unsigned clean_flags;       /* what to clean                            */
+	bool     clean_pressure_full; /* use PSI full avg10 instead of some       */
 	bool     notifications;     /* desktop notifications (notify-send)      */
 	bool     use_syslog;        /* daemon logs to syslog too                */
 }
@@ -120,6 +124,7 @@ CONFIG;
 static CONFIG config = {
 	.clean_threshold = 90,
 	.clean_pressure  = 0,
+	.clean_pressure_full = false,
 	.clean_interval  = 0,
 	.check_interval  = 5,
 	.cooldown        = 60,
@@ -375,35 +380,65 @@ static bool memory_getinfo (MEMORY_INFO *info)
 
 typedef struct
 {
-	double some_avg10;   /* % of time at least one task stalled on memory */
-	double full_avg10;   /* % of time all tasks stalled on memory         */
-	bool   available;
+	double some_avg10;
+	double some_avg60;
+	double some_avg300;
+	uint64_t some_total_us;
+	double full_avg10;
+	double full_avg60;
+	double full_avg300;
+	uint64_t full_total_us;
+	bool some_available;
+	bool full_available;
+}
+PRESSURE_METRIC;
+
+typedef struct
+{
+	PRESSURE_METRIC memory;
+	PRESSURE_METRIC cpu;
+	PRESSURE_METRIC io;
 }
 PRESSURE_INFO;
 
-static void pressure_getinfo (PRESSURE_INFO *info)
+static void pressure_readmetric (const char *path, PRESSURE_METRIC *metric)
 {
 	FILE *fp;
 	char line[256];
 
-	memset (info, 0, sizeof (*info));
-
-	fp = fopen (PROC_PRESSURE, "r");
+	fp = fopen (path, "r");
 
 	if (!fp)
 		return;
 
 	while (fgets (line, sizeof (line), fp))
 	{
-		if (!strncmp (line, "some", 4))
-			sscanf (line, "some avg10=%lf", &info->some_avg10);
-		else if (!strncmp (line, "full", 4))
-			sscanf (line, "full avg10=%lf", &info->full_avg10);
+		if (!strncmp (line, "some ", 5))
+		{
+			if (sscanf (line, "some avg10=%lf avg60=%lf avg300=%lf total=%llu",
+				&metric->some_avg10, &metric->some_avg60, &metric->some_avg300,
+				(unsigned long long *) &metric->some_total_us) == 4)
+				metric->some_available = true;
+		}
+		else if (!strncmp (line, "full ", 5))
+		{
+			if (sscanf (line, "full avg10=%lf avg60=%lf avg300=%lf total=%llu",
+				&metric->full_avg10, &metric->full_avg60, &metric->full_avg300,
+				(unsigned long long *) &metric->full_total_us) == 4)
+				metric->full_available = true;
+		}
 	}
 
-	info->available = true;
-
 	fclose (fp);
+}
+
+static void pressure_getinfo (PRESSURE_INFO *info)
+{
+	memset (info, 0, sizeof (*info));
+
+	pressure_readmetric (PROC_PRESSURE, &info->memory);
+	pressure_readmetric (PROC_PRESSURE_CPU, &info->cpu);
+	pressure_readmetric (PROC_PRESSURE_IO, &info->io);
 }
 
 /*
@@ -683,6 +718,8 @@ static void config_setvalue (const char *key, const char *value)
 		config.clean_threshold = atoi (value);
 	else if (!strcasecmp (key, "clean_pressure"))
 		config.clean_pressure = atoi (value);
+	else if (!strcasecmp (key, "clean_pressure_type"))
+		config.clean_pressure_full = !strcasecmp (value, "full");
 	else if (!strcasecmp (key, "clean_interval"))
 		config.clean_interval = atoi (value);
 	else if (!strcasecmp (key, "check_interval"))
@@ -878,17 +915,327 @@ static void print_meminfo (const MEMORY_INFO *info, bool use_color)
 	}
 }
 
-static void print_pressure (const PRESSURE_INFO *pressure, bool use_color)
+static void print_pressure_metric (const char *label, const PRESSURE_METRIC *metric,
+	bool include_full, bool use_color)
 {
-	if (!pressure->available)
+	if (!metric->some_available)
 		return;
 
-	printf ("Pressure         some %s%.2f%%%s  full %.2f%%  (10s avg, PSI)\n",
-		usage_color (pressure->some_avg10 * 10.0, use_color), pressure->some_avg10,
-		use_color ? "\033[0m" : "", pressure->full_avg10);
+	printf ("%-15s some %s%5.2f%%%s  (10s / 60s / 5m: %.2f%% / %.2f%% / %.2f%%)",
+		label, usage_color (metric->some_avg10 * 10.0, use_color),
+		metric->some_avg10, use_color ? "\033[0m" : "",
+		metric->some_avg10, metric->some_avg60, metric->some_avg300);
+
+	if (include_full && metric->full_available)
+		printf ("  full %5.2f%% / %.2f%% / %.2f%%",
+			metric->full_avg10, metric->full_avg60, metric->full_avg300);
+
+	printf ("\n");
 }
 
-static void print_memory_details (const MEMORY_INFO *info)
+static void print_pressure (const PRESSURE_INFO *pressure, bool use_color)
+{
+	print_pressure_metric ("Memory PSI", &pressure->memory, true, use_color);
+	print_pressure_metric ("CPU PSI", &pressure->cpu, false, use_color);
+	print_pressure_metric ("I/O PSI", &pressure->io, true, use_color);
+}
+
+typedef struct
+{
+	uint64_t original_bytes;
+	uint64_t compressed_bytes;
+	uint64_t memory_used_bytes;
+	uint64_t memory_limit_bytes;
+	uint64_t memory_used_max_bytes;
+	uint64_t same_pages;
+	uint64_t pages_compacted;
+	uint64_t huge_pages;
+	unsigned devices;
+	bool available;
+}
+ZRAM_INFO;
+
+static bool zram_name_valid (const char *name)
+{
+	const char *cursor;
+
+	if (strncmp (name, "zram", 4) || !isdigit ((unsigned char) name[4]))
+		return false;
+
+	for (cursor = name + 4; *cursor; cursor++)
+	{
+		if (!isdigit ((unsigned char) *cursor))
+			return false;
+	}
+
+	return true;
+}
+
+static void zram_getinfo (ZRAM_INFO *info)
+{
+	DIR *dir;
+	struct dirent *entry;
+	char path[PATH_MAX];
+
+	memset (info, 0, sizeof (*info));
+
+	dir = opendir ("/sys/block");
+
+	if (!dir)
+		return;
+
+	while ((entry = readdir (dir)))
+	{
+		FILE *fp;
+		unsigned long long original, compressed, used, limit, used_max;
+		unsigned long long same, compacted, huge = 0;
+		int fields;
+
+		if (!zram_name_valid (entry->d_name))
+			continue;
+
+		if (snprintf (path, sizeof (path), "/sys/block/%s/mm_stat", entry->d_name) >= (int) sizeof (path))
+			continue;
+
+		fp = fopen (path, "r");
+
+		if (!fp)
+			continue;
+
+		fields = fscanf (fp, "%llu %llu %llu %llu %llu %llu %llu %llu",
+			&original, &compressed, &used, &limit, &used_max, &same, &compacted, &huge);
+		fclose (fp);
+
+		if (fields < 7)
+			continue;
+
+		info->original_bytes += original;
+		info->compressed_bytes += compressed;
+		info->memory_used_bytes += used;
+		info->memory_limit_bytes += limit;
+		info->memory_used_max_bytes += used_max;
+		info->same_pages += same;
+		info->pages_compacted += compacted;
+
+		if (fields >= 8)
+			info->huge_pages += huge;
+
+		info->devices += 1;
+		info->available = true;
+	}
+
+	closedir (dir);
+}
+
+typedef struct
+{
+	uint64_t page_faults;
+	uint64_t major_faults;
+	uint64_t pswpin;
+	uint64_t pswpout;
+	uint64_t pgscan_kswapd;
+	uint64_t pgsteal_kswapd;
+	uint64_t pgscan_direct;
+	uint64_t pgsteal_direct;
+	uint64_t compact_stall;
+	uint64_t compact_success;
+	uint64_t compact_fail;
+	uint64_t oom_kill;
+	bool available;
+}
+VMSTAT_INFO;
+
+static void vmstat_getinfo (VMSTAT_INFO *info)
+{
+	FILE *fp;
+	char line[256];
+	char key[64];
+	unsigned long long value;
+
+	memset (info, 0, sizeof (*info));
+
+	fp = fopen (PROC_VMSTAT, "r");
+
+	if (!fp)
+		return;
+
+	while (fgets (line, sizeof (line), fp))
+	{
+		if (sscanf (line, "%63s %llu", key, &value) != 2)
+			continue;
+
+		if (!strcmp (key, "pgfault"))
+			info->page_faults = value;
+		else if (!strcmp (key, "pgmajfault"))
+			info->major_faults = value;
+		else if (!strcmp (key, "pswpin"))
+			info->pswpin = value;
+		else if (!strcmp (key, "pswpout"))
+			info->pswpout = value;
+		else if (!strcmp (key, "pgscan_kswapd"))
+			info->pgscan_kswapd = value;
+		else if (!strcmp (key, "pgsteal_kswapd"))
+			info->pgsteal_kswapd = value;
+		else if (!strcmp (key, "pgscan_direct"))
+			info->pgscan_direct = value;
+		else if (!strcmp (key, "pgsteal_direct"))
+			info->pgsteal_direct = value;
+		else if (!strcmp (key, "compact_stall"))
+			info->compact_stall = value;
+		else if (!strcmp (key, "compact_success"))
+			info->compact_success = value;
+		else if (!strcmp (key, "compact_fail"))
+			info->compact_fail = value;
+		else if (!strcmp (key, "oom_kill"))
+			info->oom_kill = value;
+	}
+
+	fclose (fp);
+	info->available = true;
+}
+
+typedef struct
+{
+	uint64_t current_bytes;
+	uint64_t limit_bytes;
+	uint64_t high_bytes;
+	uint64_t swap_current_bytes;
+	uint64_t high_events;
+	uint64_t max_events;
+	uint64_t oom_events;
+	uint64_t oom_kill_events;
+	bool available;
+	bool limit_unlimited;
+}
+CGROUP_INFO;
+
+static bool read_cgroup_value (const char *path, uint64_t *value, bool *unlimited)
+{
+	FILE *fp;
+	char line[128];
+	char *end;
+	unsigned long long parsed;
+
+	fp = fopen (path, "r");
+
+	if (!fp)
+		return false;
+
+	if (!fgets (line, sizeof (line), fp))
+	{
+		fclose (fp);
+		return false;
+	}
+
+	fclose (fp);
+
+	line[strcspn (line, "\r\n")] = 0;
+
+	if (!strcmp (line, "max"))
+	{
+		if (unlimited)
+			*unlimited = true;
+		*value = 0;
+		return true;
+	}
+
+	errno = 0;
+	parsed = strtoull (line, &end, 10);
+
+	if (errno || end == line || *end)
+		return false;
+
+	*value = (uint64_t) parsed;
+
+	if (unlimited)
+		*unlimited = false;
+
+	return true;
+}
+
+static void cgroup_getinfo (CGROUP_INFO *info)
+{
+	FILE *fp;
+	char line[2048];
+	char group[1024] = "";
+	char directory[PATH_MAX];
+	char path[PATH_MAX];
+
+	memset (info, 0, sizeof (*info));
+
+	fp = fopen ("/proc/self/cgroup", "r");
+
+	if (!fp)
+		return;
+
+	while (fgets (line, sizeof (line), fp))
+	{
+		if (!strncmp (line, "0::", 3))
+		{
+			snprintf (group, sizeof (group), "%s", line + 3);
+			group[strcspn (group, "\r\n")] = 0;
+			break;
+		}
+	}
+
+	fclose (fp);
+
+	/* Refuse malformed paths rather than composing an unsafe sysfs path. */
+	if (!group[0] || group[0] != '/' || strstr (group, "/../") ||
+		!strcmp (group, "/..") || strstr (group, "//"))
+		return;
+
+	if (snprintf (directory, sizeof (directory), "/sys/fs/cgroup%s", group) >= (int) sizeof (directory))
+		return;
+
+	if (snprintf (path, sizeof (path), "%s/memory.current", directory) >= (int) sizeof (path))
+		return;
+
+	if (!read_cgroup_value (path, &info->current_bytes, NULL))
+		return;
+
+	info->available = true;
+
+	if (snprintf (path, sizeof (path), "%s/memory.max", directory) < (int) sizeof (path))
+		read_cgroup_value (path, &info->limit_bytes, &info->limit_unlimited);
+
+	if (snprintf (path, sizeof (path), "%s/memory.high", directory) < (int) sizeof (path))
+		read_cgroup_value (path, &info->high_bytes, NULL);
+
+	if (snprintf (path, sizeof (path), "%s/memory.swap.current", directory) < (int) sizeof (path))
+		read_cgroup_value (path, &info->swap_current_bytes, NULL);
+
+	if (snprintf (path, sizeof (path), "%s/memory.events", directory) < (int) sizeof (path))
+	{
+		unsigned long long value;
+		char key[64];
+
+		fp = fopen (path, "r");
+
+		if (fp)
+		{
+			while (fgets (line, sizeof (line), fp))
+			{
+				if (sscanf (line, "%63s %llu", key, &value) != 2)
+					continue;
+
+				if (!strcmp (key, "high"))
+					info->high_events = value;
+				else if (!strcmp (key, "max"))
+					info->max_events = value;
+				else if (!strcmp (key, "oom"))
+					info->oom_events = value;
+				else if (!strcmp (key, "oom_kill"))
+					info->oom_kill_events = value;
+			}
+
+			fclose (fp);
+		}
+	}
+}
+
+static void print_memory_details (const MEMORY_INFO *info, const ZRAM_INFO *zram,
+	const VMSTAT_INFO *vmstat, const CGROUP_INFO *cgroup)
 {
 	char value[32], other[32];
 
