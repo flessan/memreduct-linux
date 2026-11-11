@@ -60,27 +60,36 @@ curl -fsSL https://raw.githubusercontent.com/flessan/memreduct-linux/master/inst
 ---
 
 Linux port of [Mem Reduct](https://github.com/henrypp/memreduct) by Henry++.
-Where the Windows version uses undocumented Native API calls to clear the
-working sets and standby page lists, this port uses the official Linux kernel
-interfaces to achieve the same result:
+The Windows application uses several Native API operations that do not exist
+on Linux. This port maps the useful parts to documented Linux kernel
+interfaces rather than pretending the underlying memory models are identical:
 
+| Windows original | Linux implementation |
+| --- | --- |
+| Standby list / low-priority standby list | Reclaimable page cache via `drop_caches=1`; Linux does not expose the same standby priorities |
+| System file cache | Page cache plus reclaimable dentry/inode slab via `drop_caches=1/2` |
+| Modified file cache | `sync()` writes dirty file-backed pages so they can become reclaimable |
+| Modified page list | `sync()` and kernel writeback; there is no user-facing Linux equivalent list |
+| Combine memory lists | Physical memory compaction via `compact_memory` |
+| Working-set emptying | No safe system-wide Linux equivalent; process RSS is reported instead |
+| Registry cache | Windows-specific; not applicable to Linux |
 
-| Windows original      | Linux port                                   |
-| --------------------- | -------------------------------------------- |
-| Standby page lists    | Page cache (`/proc/sys/vm/drop_caches` = 1)  |
-| System working set    | Dentry/inode slab caches (`drop_caches` = 2) |
-| Combined memory lists | Memory compaction (`compact_memory`)         |
-| Modified page lists   | `sync()` + swap reload (`swapoff`/`swapon`)  |
+Swap reload (`swapoff`/`swapon`) is a separate optional Linux operation, not
+a replacement for Windows' modified-page list. It is disabled by default
+because swapped pages must fit back into RAM.
 
 ### Features
 
-- **Status** - colored overview of physical memory, reclaimable cache, swap
-  and PSI memory pressure, with `--json` output for scripting
-- **Clean** - one-shot memory cleaning with selectable areas
+- **Status and stats** - physical memory, page cache, swap, PSI pressure,
+  active/inactive pages, anonymous/file-backed pages, dirty/writeback memory,
+  slab, commit usage and huge pages; JSON output is available for scripts
+- **Clean** - one-shot memory cleaning with selectable areas, including an
+  explicit modified-file-cache sync
 - **Top** - processes using the most memory (`memreduct top`)
 - **Monitor** - interactive full-screen live monitor with usage history
   graph, memory pressure and top consumers (`c` = clean, `q` = quit)
-- **Daemon** - automatic cleaning at a usage threshold and/or on a timer,
+- **Daemon** - automatic cleaning at a usage threshold, PSI pressure level
+  and/or on a timer,
   high-usage alerts, systemd integration, config reload on `SIGHUP`,
   syslog/journal logging and optional desktop notifications
 - **Shell completions** for bash and fish, man page, systemd unit
@@ -117,12 +126,15 @@ cd packaging/arch && makepkg -si            # Arch Linux package
 
 ```sh
 memreduct                      # show memory usage
+memreduct stats                # detailed memory breakdown
 memreduct status --json        # ...as JSON, for scripts
 memreduct top                  # biggest memory consumers
 sudo memreduct clean           # clean memory now
-sudo memreduct clean --all     # ...including swap reload
+sudo memreduct clean --modified-cache  # flush dirty file-backed pages
+sudo memreduct clean --all     # all areas, including optional swap reload
 sudo memreduct monitor         # live monitor; press 'c' to clean
 sudo memreduct daemon -t 85    # auto-clean at 85% usage (foreground)
+sudo memreduct daemon -p 10    # trigger at 10% PSI some avg10 pressure
 ```
 
 Run it automatically at boot:
@@ -138,13 +150,15 @@ System-wide `/etc/memreduct.conf`, per-user
 The daemon reloads its configuration on `systemctl reload memreduct`.
 
 ```ini
-clean_threshold = 90    # auto-clean when memory usage reaches 90% (0 = off)
+clean_threshold = 90    # auto-clean at physical memory usage (0 = off)
+clean_pressure = 0      # auto-clean at PSI some avg10 pressure (0 = off)
 clean_interval = 0      # additionally clean every N minutes (0 = off)
 cooldown = 60           # min seconds between threshold-triggered cleans
 clean_pagecache = yes   # drop clean page cache
 clean_dentries = yes    # drop dentry/inode slab caches
 clean_compact = yes     # compact physical memory
-clean_swap = no         # flush swap back to RAM
+clean_modifiedcache = yes # sync dirty file-backed pages
+clean_swap = no         # flush swap back to RAM (keep disabled unless needed)
 notifications = yes     # desktop notifications via notify-send
 ```
 
@@ -159,9 +173,12 @@ A static Vite + React landing page (with live GitHub API stats) lives in
 ### Notes
 
 - Cleaning requires root; monitoring does not.
-- Dropping caches is non-destructive - `sync()` is called first and the
-  kernel only discards clean, reclaimable pages. Expect a short period of
-  slower disk access while hot caches repopulate.
+- Cache eviction is non-destructive: dirty data is synced first and the
+  kernel drops only clean, reclaimable caches. Hot caches may need to be
+  repopulated, so disk access can briefly become slower.
+- PSI-based automation requires kernel memory pressure metrics
+  (`/proc/pressure/memory`, Linux 4.20+); the threshold trigger and timer
+  continue to work without PSI.
 - Swap reload is skipped automatically when the swapped data would not fit
   into available RAM.
 
