@@ -82,16 +82,19 @@ because swapped pages must fit back into RAM.
 
 - **Status and stats** - physical memory, page cache, swap, PSI pressure,
   active/inactive pages, anonymous/file-backed pages, dirty/writeback memory,
-  slab, commit usage and huge pages; JSON output is available for scripts
+  slab, commit usage, huge pages, PSI, ZRAM, VM reclaim counters and cgroup v2 limits;
+  JSON output is available for scripts
 - **Clean** - one-shot memory cleaning with selectable areas, including an
   explicit modified-file-cache sync
 - **Top** - processes using the most memory (`memreduct top`)
 - **Monitor** - interactive full-screen live monitor with usage history
   graph, memory pressure and top consumers (`c` = clean, `q` = quit)
-- **Daemon** - automatic cleaning at a usage threshold, PSI pressure level
-  and/or on a timer,
+- **Daemon** - automatic cleaning at a usage threshold, PSI memory pressure
+  (`some` or `full`) and/or on a timer,
   high-usage alerts, systemd integration, config reload on `SIGHUP`,
   syslog/journal logging and optional desktop notifications
+- **Linux telemetry** - memory PSI plus CPU/I/O PSI, ZRAM compression, page reclaim,
+  swap activity, OOM kills and current cgroup v2 limits/events
 - **Shell completions** for bash and fish, man page, systemd unit
 - Zero dependencies: plain C99 + libc + `/proc` - no GUI toolkit, no libraries
 
@@ -120,8 +123,44 @@ Optional:
 make static                        # fully static, distro-independent binary
 ./packaging/debian/build-deb.sh    # build a .deb  (Debian/Ubuntu/Mint/...)
 rpmbuild -ba packaging/rpm/memreduct.spec   # build an .rpm (Fedora/RHEL/openSUSE)
-cd packaging/arch && makepkg -si            # Arch Linux package
+makepkg -si                         # Arch Linux package (root PKGBUILD)
 ```
+
+### Arch Linux and ZRAM
+
+The repository root contains an AUR-ready `PKGBUILD` and matching `.SRCINFO`.
+To build the package locally:
+
+```sh
+sudo pacman -S --needed base-devel git
+makepkg -si
+```
+
+The package installs the binary, configuration, systemd unit, man page and
+Bash/Fish completions under standard `/usr` paths. It does not enable the
+daemon or modify memory settings during installation.
+
+For optional compressed-RAM swap, Arch provides `zram-generator`:
+
+```sh
+sudo pacman -S zram-generator
+sudo install -d /etc/systemd
+sudo tee /etc/systemd/zram-generator.conf >/dev/null <<'EOF'
+[zram0]
+zram-size = min(ram / 2, 4096)
+compression-algorithm = zstd
+EOF
+sudo systemctl daemon-reload
+sudo reboot
+```
+
+After the device is active, `memreduct stats` reports the ZRAM logical size,
+compressed size, allocated memory and compression ratio. Mem Reduct only
+reads these statistics; it never creates, resets or reconfigures ZRAM devices.
+
+See the [Arch Linux ZRAM guide](https://wiki.archlinux.org/title/ZRAM),
+[zram-generator documentation](https://man.archlinux.org/man/zram-generator.8)
+and [Linux kernel ZRAM statistics](https://www.kernel.org/doc/html/latest/admin-guide/blockdev/zram.html).
 
 ### Usage
 
@@ -136,6 +175,7 @@ sudo memreduct clean --all     # all areas, including optional swap reload
 sudo memreduct monitor         # live monitor; press 'c' to clean
 sudo memreduct daemon -t 85    # auto-clean at 85% usage (foreground)
 sudo memreduct daemon -p 10    # trigger at 10% PSI some avg10 pressure
+sudo memreduct daemon -p 5 --pressure-type full  # trigger on full memory stalls
 ```
 
 Run it automatically at boot:
@@ -152,7 +192,8 @@ The daemon reloads its configuration on `systemctl reload memreduct`.
 
 ```ini
 clean_threshold = 90    # auto-clean at physical memory usage (0 = off)
-clean_pressure = 0      # auto-clean at PSI some avg10 pressure (0 = off)
+clean_pressure = 0      # auto-clean at PSI pressure avg10 (0 = off)
+clean_pressure_type = some # some = partial stalls; full = system-wide full stalls
 clean_interval = 0      # additionally clean every N minutes (0 = off)
 cooldown = 60           # min seconds between automatic cleanups
 clean_pagecache = yes   # drop clean page cache
@@ -163,7 +204,8 @@ clean_swap = no         # flush swap back to RAM (keep disabled unless needed)
 notifications = yes     # desktop notifications via notify-send
 ```
 
-See `man memreduct` for the full reference.
+See `man memreduct` for the full reference. `stats` also reports the cgroup v2
+that contains the current process, when the unified cgroup hierarchy is mounted.
 
 ### Landing page
 
@@ -177,9 +219,12 @@ A static Vite + React landing page (with live GitHub API stats) lives in
 - Cache eviction is non-destructive: dirty data is synced first and the
   kernel drops only clean, reclaimable caches. Hot caches may need to be
   repopulated, so disk access can briefly become slower.
-- PSI-based automation requires kernel memory pressure metrics
-  (`/proc/pressure/memory`, Linux 4.20+); the threshold trigger and timer
-  continue to work without PSI.
+- PSI metrics require kernel support and accessible `/proc/pressure/` files.
+  `some` indicates at least one task is stalled; `full` indicates all non-idle
+  tasks are stalled simultaneously. Threshold and interval triggers still work
+  when PSI is unavailable.
+- ZRAM, VM counters and cgroup v2 metrics are read-only and optional. Missing
+  kernel interfaces simply appear as unavailable or zero in JSON.
 - Swap reload is skipped automatically when the swapped data would not fit
   into available RAM.
 
