@@ -25,7 +25,7 @@ SRC = src/memreduct.c
 all: $(BIN)
 
 test: $(BIN)
-	./tests/smoke.sh ./$(BIN)
+	sh ./tests/smoke.sh ./$(BIN)
 
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS)
