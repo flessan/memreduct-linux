@@ -5,7 +5,7 @@
 #   rpmbuild -ba packaging/rpm/memreduct.spec
 
 Name:           memreduct
-Version:        1.1.0
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Lightweight real-time memory monitoring and cleaning
 License:        GPL-3.0-or-later
@@ -19,7 +19,7 @@ Recommends:     libnotify
 Lightweight real-time memory management application to monitor and clean
 system memory. Linux port of Mem Reduct: cleans the page cache, dentry and
 inode slab caches, compacts physical memory, and can flush swap back to
-RAM - on demand, at a usage threshold, or on a timer.
+RAM - on demand, at a usage threshold, PSI pressure level, or on a timer.
 
 %prep
 %setup -q
