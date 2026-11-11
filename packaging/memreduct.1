@@ -57,10 +57,10 @@ Drop dentry and inode slab caches.
 Compact fragmented physical memory.
 .TP
 .B \-\-modified-cache
-Run
+Run the system-wide
 .B sync
-to write dirty file-backed pages so they can become reclaimable. This does
-not discard application memory.
+operation to write dirty file-backed pages so they can become reclaimable.
+This does not discard application memory, but it can initiate disk writes.
 .TP
 .B \-\-swap
 Move swapped pages back into RAM by running
