@@ -1257,11 +1257,11 @@ static int command_daemon (void)
 	if (require_root ())
 		return 1;
 
-	if (!config.clean_threshold && !config.clean_interval)
+	if (!config.clean_threshold && !config.clean_pressure && !config.clean_interval)
 	{
 		fprintf (stderr,
-			"error: nothing to do: both clean_threshold and clean_interval are disabled.\n"
-			"set at least one of them in " SYSTEM_CONFIG " or via --threshold/--interval.\n");
+			"error: nothing to do: no auto-clean trigger is enabled (threshold, PSI pressure and interval are disabled).\n"
+			"set at least one of them in " SYSTEM_CONFIG " or via --threshold/--pressure/--interval.\n");
 
 		return 1;
 	}
@@ -1587,7 +1587,7 @@ static void print_usage (void)
 		"  --swap                 flush swap back into RAM (swapoff/swapon)\n"
 		"  --modified-cache       flush modified file-backed pages (sync)\n"
 		"  --all                  all of the above\n"
-		"  (default: --pagecache --dentries --compact)\n"
+		"  (default: --pagecache --dentries --compact --modified-cache)\n"
 		"\n"
 		"Options:\n"
 		"  -t, --threshold <pct>  auto-clean when memory usage >= pct (daemon)\n"
@@ -1595,7 +1595,7 @@ static void print_usage (void)
 		"  -n, --interval <min>   auto-clean every N minutes (daemon)\n"
 		"  -i, --refresh <sec>    refresh/poll period (monitor/daemon)\n"
 		"  -l, --limit <n>        number of processes to show (top, default 10)\n"
-		"  -j, --json             machine-readable JSON output (status/top)\n"
+		"  -j, --json             machine-readable JSON output (status/stats/top)\n"
 		"  -c, --config <file>    use an alternative config file\n"
 		"  -q, --quiet            disable desktop notifications\n"
 		"  -h, --help             show this help\n"
