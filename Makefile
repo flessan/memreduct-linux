@@ -24,6 +24,9 @@ SRC = src/memreduct.c
 
 all: $(BIN)
 
+test: $(BIN)
+	./tests/smoke.sh ./$(BIN)
+
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDFLAGS)
 
@@ -56,4 +59,4 @@ uninstall:
 clean:
 	rm -f $(BIN)
 
-.PHONY: all static install uninstall clean
+.PHONY: all test static install uninstall clean
